@@ -3,7 +3,6 @@ set(TARGET llama-server)
 option(LLAMA_SERVER_SSL "Build SSL support for the server" OFF)
 
 include_directories(${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_CURRENT_BINARY_DIR})
-
 if (MINGW)
     # fix: https://github.com/ggml-org/llama.cpp/actions/runs/9651004652/job/26617901362?pr=8006
     add_compile_definitions(_WIN32_WINNT=${GGML_WIN_VER})
@@ -31,6 +30,8 @@ foreach(asset ${PUBLIC_ASSETS})
 endforeach()
 
 add_executable(${TARGET} ${TARGET_SRCS})
+# target_link_libraries(llama-server PRIVATE CURL::libcurl)
+# target_link_libraries(llama-server PRIVATE z)
 install(TARGETS ${TARGET} RUNTIME)
 
 target_include_directories(${TARGET} PRIVATE ../llava)
