@@ -4,8 +4,13 @@ include(CheckIncludeFileCXX)
 
 #set(CMAKE_WARN_DEPRECATED YES)
 set(CMAKE_WARN_UNUSED_CLI YES)
-
+# set(CMAKE_PREFIX_PATH "/home/gjy/Desktop/oh_sdk/5.0/linux/native/sysroot/usr/lib/aarch64-linux-ohos/libcurl-ohos")
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+# set(ZLIB_ROOT "/home/gjy/dora/zlib/build-ohos")
+
+# include_directories("${ZLIB_ROOT}")
+# link_directories("${ZLIB_ROOT}")
+# find_package(CURL REQUIRED)
 
 if (NOT XCODE AND NOT MSVC AND NOT CMAKE_BUILD_TYPE)
     set(CMAKE_BUILD_TYPE Release CACHE STRING "Build type" FORCE)
