@@ -1390,7 +1390,7 @@ UseGgmlGemm2:;
         if (nth >= nchunk0 * nchunk1) {
             break;
         }
-
+        
         current_chunk = atomic_fetch_add_explicit(&params->threadpool->current_chunk, 1, memory_order_relaxed);
     }
 }
@@ -1607,6 +1607,8 @@ static void ggml_compute_forward_mul_mat_id(
             chunk_size = 64;
         }
 
+        GGML_LOG_INFO("nr0: %d, nr1: %d, chunk_size: %d", nr0, nr1, chunk_size);
+
 #if defined(__aarch64__)
         // disable for ARM
         const bool disable_chunking = true;
@@ -1650,10 +1652,10 @@ static void ggml_compute_forward_mul_mat_id(
 
             if (nth >= nchunk0 * nchunk1) {
                 break;
-            }
-
+            } 
+            
             current_chunk = atomic_fetch_add_explicit(current_chunk_ctr, 1, memory_order_relaxed);
-            if(ith<4) break;
+            GGML_PERF_RECORD_CHUNK_ACQUISITION(ith);
         }
     }
 }

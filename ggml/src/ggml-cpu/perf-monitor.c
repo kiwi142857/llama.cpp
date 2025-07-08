@@ -31,6 +31,8 @@ static const char* ggml_perf_custom_func_name(enum ggml_perf_custom_func func) {
     switch (func) {
         case GGML_PERF_FUNC_MUL_MAT_ONE_CHUNK:    return "mul_mat_one_chunk";
         case GGML_PERF_FUNC_MUL_MAT_ID_ONE_CHUNK: return "mul_mat_id_one_chunk";
+        case GGML_PERF_FUNC_MUL_MAT_PRE_CHUNK: return "mul_mat_pre_chunk";
+        case GGML_PERF_FUNC_MUL_MAT_ID_PRE_CHUNK: return "mul_mat_id_pre_chunk";
         default: return "unknown";
     }
 }
@@ -50,6 +52,7 @@ void ggml_perf_monitor_init(void) {
         g_perf_monitor.threads[t].active = false;
         g_perf_monitor.threads[t].total_compute_time_us = 0;
         g_perf_monitor.threads[t].total_custom_time_us = 0;
+        g_perf_monitor.threads[t].chunk_acquisitions_count = 0;
         
         for (int op = 0; op < GGML_OP_COUNT; op++) {
             g_perf_monitor.threads[t].ops[op].total_time_us = 0;
@@ -89,6 +92,7 @@ void ggml_perf_monitor_reset(void) {
         g_perf_monitor.threads[t].total_compute_time_us = 0;
         g_perf_monitor.threads[t].total_custom_time_us = 0;
         g_perf_monitor.threads[t].active = false;
+        g_perf_monitor.threads[t].chunk_acquisitions_count = 0;
         
         for (int op = 0; op < GGML_OP_COUNT; op++) {
             g_perf_monitor.threads[t].ops[op].total_time_us = 0;
@@ -285,6 +289,24 @@ void ggml_perf_custom_func_end(int thread_id, enum ggml_perf_custom_func func_ty
     }
 }
 
+// 记录chunk抢占
+void ggml_perf_record_chunk_acquisition(int thread_id) {
+    if (!g_perf_monitor.enabled || thread_id >= GGML_MAX_N_THREADS) {
+        return;
+    }
+    
+    g_perf_monitor.threads[thread_id].active = true;
+    g_perf_monitor.threads[thread_id].chunk_acquisitions_count++;
+    
+    // 调试信息
+    static int chunk_acq_debug_count = 0;
+    if (chunk_acq_debug_count < 5) {
+        printf("DEBUG: 线程 %d 抢占chunk (总计: %ld)\n", 
+               thread_id, g_perf_monitor.threads[thread_id].chunk_acquisitions_count);
+        chunk_acq_debug_count++;
+    }
+}
+
 // 打印简要统计信息
 void ggml_perf_monitor_print_summary(void) {
     if (!g_perf_monitor.enabled) {
@@ -307,15 +329,17 @@ void ggml_perf_monitor_print_summary(void) {
     printf("%d\n", active_threads);
     
     printf("\n各线程计算时间:\n");
-    printf("线程ID | 总计算时间(ms) | 自定义函数时间(ms) | 利用率(%%)\n");
-    printf("-------|---------------|------------------|----------\n");
+    printf("线程ID | 总计算时间(ms) | 自定义函数时间(ms) | Chunk抢占次数 | 利用率(%%)\n");
+    printf("-------|---------------|------------------|--------------|----------\n");
     
     for (int t = 0; t < GGML_MAX_N_THREADS; t++) {
         if (g_perf_monitor.threads[t].active) {
             double compute_time_ms = g_perf_monitor.threads[t].total_compute_time_us / 1000.0;
             double custom_time_ms = g_perf_monitor.threads[t].total_custom_time_us / 1000.0;
             double utilization = (double)g_perf_monitor.threads[t].total_compute_time_us / total_time * 100.0;
-            printf("%6d | %13.2f | %16.2f | %8.1f\n", t, compute_time_ms, custom_time_ms, utilization);
+            printf("%6d | %13.2f | %16.2f | %12ld | %8.1f\n", 
+                   t, compute_time_ms, custom_time_ms, 
+                   g_perf_monitor.threads[t].chunk_acquisitions_count, utilization);
         }
     }
     
@@ -433,6 +457,7 @@ void ggml_perf_monitor_print_detailed(void) {
         printf("\n--- 线程 %d ---\n", t);
         printf("总计算时间: %.2f ms\n", g_perf_monitor.threads[t].total_compute_time_us / 1000.0);
         printf("自定义函数总时间: %.2f ms\n", g_perf_monitor.threads[t].total_custom_time_us / 1000.0);
+        printf("Chunk抢占次数: %ld\n", g_perf_monitor.threads[t].chunk_acquisitions_count);
         printf("\n操作详情:\n");
         printf("操作类型 | 总时间(ms) | 调用次数 | 平均(us) | 最小(us) | 最大(us)\n");
         printf("---------|-----------|----------|----------|----------|----------\n");
@@ -580,6 +605,7 @@ void ggml_perf_monitor_export_json(const char* filename) {
         fprintf(fp, "      \"thread_id\": %d,\n", t);
         fprintf(fp, "      \"total_compute_time_us\": %ld,\n", g_perf_monitor.threads[t].total_compute_time_us);
         fprintf(fp, "      \"total_custom_time_us\": %ld,\n", g_perf_monitor.threads[t].total_custom_time_us);
+        fprintf(fp, "      \"chunk_acquisitions_count\": %ld,\n", g_perf_monitor.threads[t].chunk_acquisitions_count);
         fprintf(fp, "      \"operations\": [\n");
         
         bool first_op = true;

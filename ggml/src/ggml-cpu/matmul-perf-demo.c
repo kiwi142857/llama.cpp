@@ -16,11 +16,14 @@
 
 // 模拟函数执行来演示性能监控
 void simulate_matmul_chunk_execution() {
-    printf("模拟 MatMul Chunk 函数执行...\n");
+    printf("模拟 MatMul Chunk 函数执行和chunk抢占...\n");
     
-    // 模拟不同线程执行 mul_mat_one_chunk
+    // 模拟不同线程执行 mul_mat_one_chunk 和抢占chunk
     for (int thread = 0; thread < 4; thread++) {
         for (int i = 0; i < 10 + thread * 5; i++) {
+            // 模拟抢占chunk
+            GGML_PERF_RECORD_CHUNK_ACQUISITION(thread);
+            
             GGML_PERF_CUSTOM_FUNC_START(thread, GGML_PERF_FUNC_MUL_MAT_ONE_CHUNK);
             
             // 模拟不同的执行时间
@@ -33,6 +36,9 @@ void simulate_matmul_chunk_execution() {
     // 模拟不同线程执行 mul_mat_id_one_chunk
     for (int thread = 0; thread < 3; thread++) {
         for (int i = 0; i < 5 + thread * 3; i++) {
+            // 模拟抢占chunk
+            GGML_PERF_RECORD_CHUNK_ACQUISITION(thread);
+            
             GGML_PERF_CUSTOM_FUNC_START(thread, GGML_PERF_FUNC_MUL_MAT_ID_ONE_CHUNK);
             
             // 模拟不同的执行时间
@@ -92,8 +98,9 @@ int main(int argc, char** argv) {
     printf("2. 启用: ggml_perf_monitor_enable(true)\n");
     printf("3. 开始计时: GGML_PERF_CUSTOM_FUNC_START(thread_id, func_type)\n");
     printf("4. 结束计时: GGML_PERF_CUSTOM_FUNC_END(thread_id, func_type)\n");
-    printf("5. 打印结果: ggml_perf_monitor_print_matmul_chunks()\n");
-    printf("6. 导出数据: ggml_perf_monitor_export_matmul_chunks_csv()\n");
+    printf("5. 记录Chunk抢占: GGML_PERF_RECORD_CHUNK_ACQUISITION(thread_id)\n");
+    printf("6. 打印结果: ggml_perf_monitor_print_matmul_chunks()\n");
+    printf("7. 导出数据: ggml_perf_monitor_export_matmul_chunks_csv()\n");
     
     // 清理资源
     ggml_perf_monitor_free();
@@ -129,6 +136,10 @@ int main(int argc, char** argv) {
  * GGML_PERF_CUSTOM_FUNC_START(ith, GGML_PERF_FUNC_MUL_MAT_ID_ONE_CHUNK);
  * ggml_compute_forward_mul_mat_id_one_chunk(...);
  * GGML_PERF_CUSTOM_FUNC_END(ith, GGML_PERF_FUNC_MUL_MAT_ID_ONE_CHUNK);
+ * 
+ * // Chunk抢占统计 (在获取新chunk时调用):
+ * current_chunk = atomic_fetch_add_explicit(&params->threadpool->current_chunk, 1, memory_order_relaxed);
+ * GGML_PERF_RECORD_CHUNK_ACQUISITION(ith);
  * ```
  * 
  * 性能指标解释:
