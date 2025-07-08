@@ -1,0 +1,124 @@
+# GGML CPU 性能监控 Makefile
+# 使用方法: make -f Makefile.perf
+
+CC = gcc
+CXX = g++
+CFLAGS = -O2 -Wall -Wextra -std=c11 -fPIC
+CXXFLAGS = -O2 -Wall -Wextra -std=c++11 -fPIC
+
+# 启用性能监控
+CFLAGS += -DGGML_CPU_PERF_MONITOR=1
+CXXFLAGS += -DGGML_CPU_PERF_MONITOR=1
+
+# 线程支持
+CFLAGS += -pthread
+CXXFLAGS += -pthread
+
+# 包含目录
+INCLUDE_DIRS = -I. -I../../include -I../.. -I../../src
+
+# 源文件
+PERF_SOURCES = perf-monitor.c
+EXAMPLE_SOURCES = perf-example.c
+
+# 依赖的GGML源文件 (简化版本，实际使用时需要完整的GGML库)
+GGML_SOURCES = ../../ggml.c ggml-cpu.c ops.c
+
+# 目标文件
+PERF_OBJECTS = $(PERF_SOURCES:.c=.o)
+EXAMPLE_OBJECTS = $(EXAMPLE_SOURCES:.c=.o)
+GGML_OBJECTS = $(GGML_SOURCES:.c=.o)
+
+# 主目标
+all: perf-example
+
+# 性能监控示例
+perf-example: $(PERF_OBJECTS) $(EXAMPLE_OBJECTS) $(GGML_OBJECTS)
+	$(CC) $(CFLAGS) -o $@ $^ -lm -pthread
+
+# 编译规则
+%.o: %.c
+	$(CC) $(CFLAGS) $(INCLUDE_DIRS) -c $< -o $@
+
+# 清理
+clean:
+	rm -f *.o perf-example cpu_perf_stats.csv cpu_perf_stats.json *.png create_perf_viz.py
+
+# 运行示例
+run: perf-example
+	./perf-example
+
+# 生成性能可视化
+visualize: cpu_perf_stats.csv
+	python3 create_perf_viz.py
+
+# 测试不同线程数的性能
+benchmark: perf-example
+	@echo "=== 性能基准测试 ==="
+	@echo "测试1线程..."
+	GGML_N_THREADS=1 ./perf-example > bench_1thread.log 2>&1
+	@echo "测试2线程..."
+	GGML_N_THREADS=2 ./perf-example > bench_2thread.log 2>&1
+	@echo "测试4线程..."
+	GGML_N_THREADS=4 ./perf-example > bench_4thread.log 2>&1
+	@echo "测试8线程..."
+	GGML_N_THREADS=8 ./perf-example > bench_8thread.log 2>&1
+	@echo "基准测试完成！查看 bench_*thread.log 文件"
+
+# 分析性能瓶颈
+analyze: cpu_perf_stats.csv
+	@echo "=== 性能分析 ==="
+	@echo "最耗时的操作："
+	@python3 -c "import pandas as pd; df = pd.read_csv('cpu_perf_stats.csv'); print(df.groupby('操作类型')['总时间(ms)'].sum().sort_values(ascending=False).head(10))"
+	@echo ""
+	@echo "各线程负载分布："
+	@python3 -c "import pandas as pd; df = pd.read_csv('cpu_perf_stats.csv'); print(df.groupby('线程ID')['总时间(ms)'].sum().sort_values(ascending=False))"
+
+# 创建性能报告
+report: cpu_perf_stats.csv cpu_perf_stats.json
+	@echo "=== 生成性能报告 ==="
+	@python3 -c "
+import pandas as pd
+import json
+
+# 读取CSV数据
+df = pd.read_csv('cpu_perf_stats.csv')
+
+# 读取JSON数据
+with open('cpu_perf_stats.json', 'r') as f:
+    json_data = json.load(f)
+
+print('GGML CPU 性能监控报告')
+print('=' * 50)
+print(f'监控总时长: {json_data[\"monitor_duration_us\"]/1000:.2f} ms')
+print(f'活跃线程数: {len(json_data[\"threads\"])}')
+print()
+
+print('热点操作 (按总时间排序):')
+print('-' * 30)
+hot_ops = df.groupby('操作类型')['总时间(ms)'].sum().sort_values(ascending=False)
+for op, time in hot_ops.head(10).items():
+    print(f'{op:>15}: {time:>8.2f} ms')
+
+print()
+print('线程负载分布:')
+print('-' * 20)
+thread_loads = df.groupby('线程ID')['总时间(ms)'].sum().sort_values(ascending=False)
+for thread, time in thread_loads.items():
+    print(f'线程 {thread:>2}: {time:>8.2f} ms')
+"
+
+.PHONY: all clean run visualize benchmark analyze report
+
+# 帮助信息
+help:
+	@echo "GGML CPU 性能监控 Makefile"
+	@echo "使用方法:"
+	@echo "  make -f Makefile.perf all        # 编译所有目标"
+	@echo "  make -f Makefile.perf run        # 运行性能监控示例"
+	@echo "  make -f Makefile.perf visualize  # 生成性能可视化图表"
+	@echo "  make -f Makefile.perf benchmark  # 运行多线程性能基准测试"
+	@echo "  make -f Makefile.perf analyze    # 分析性能瓶颈"
+	@echo "  make -f Makefile.perf report     # 生成详细性能报告"
+	@echo "  make -f Makefile.perf clean      # 清理编译产物"
+	@echo "  make -f Makefile.perf help       # 显示帮助信息" 

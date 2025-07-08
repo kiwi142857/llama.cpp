@@ -14,6 +14,7 @@
 #include "vec.h"
 #include "ops.h"
 #include "ggml.h"
+#include "perf-monitor.h"
 
 #if defined(_MSC_VER) || defined(__MINGW32__)
 #include <malloc.h> // using malloc.h with MSC/MINGW
@@ -1228,6 +1229,7 @@ void ggml_compute_forward_mul_mat(
     //   compute by src0 rows
 
     // TODO: extract to "extra_op"
+#define GGML_USE_LLAMAFILE 0
 #if GGML_USE_LLAMAFILE
     // broadcast factors
     const int64_t r2 = ne12 / ne02;
@@ -1351,6 +1353,9 @@ UseGgmlGemm2:;
         nchunk0 = nr0 > nr1 ? nth : 1; // parallelize by src0 rows
         nchunk1 = nr0 > nr1 ? 1 : nth; // parallelize by src1 rows
     }
+
+    // record the chunking
+    
 
     // The number of elements in each chunk
     const int64_t dr0 = (nr0 + nchunk0 - 1) / nchunk0;
@@ -1660,6 +1665,8 @@ static void ggml_compute_forward(struct ggml_compute_params * params, struct ggm
     if (ggml_cpu_extra_compute_forward(params, tensor)) {
         return;
     }
+
+    GGML_PERF_OP_START(params, tensor->op);
 
     switch (tensor->op) {
         case GGML_OP_DUP:
@@ -2021,6 +2028,8 @@ static void ggml_compute_forward(struct ggml_compute_params * params, struct ggm
                 GGML_ABORT("fatal error");
             }
     }
+
+    GGML_PERF_OP_END(params, tensor->op);
 }
 
 // Android's libc implementation "bionic" does not support setting affinity
@@ -2831,6 +2840,25 @@ static thread_ret_t ggml_graph_compute_thread(void * data) {
     const struct ggml_cplan  * cplan  = tp->cplan;
 
     set_numa_thread_affinity(state->ith);
+
+    // 覆盖NUMA设置，按CPU频率绑定线程到对应核心
+    // 前4核的ith为0～3，后4核的ith为4～7，把每个线程绑定到对应的核心上
+#ifdef __linux__
+    cpu_set_t cpuset;
+    CPU_ZERO(&cpuset);
+    
+    // 根据ith值绑定到对应的CPU核心
+    if (state->ith < 8) {  // 只处理前8个核心
+        CPU_SET(state->ith, &cpuset);
+        int result = pthread_setaffinity_np(pthread_self(), sizeof(cpu_set_t), &cpuset);
+        if (result == 0) {
+            // 绑定成功，记录日志
+            // GGML_LOG_INFO("Thread %d successfully bound to CPU %d\n", state->ith, state->ith);
+        } else {
+            // GGML_LOG_WARN("Failed to bind thread %d to CPU %d: %s\n", state->ith, state->ith, strerror(result));
+        }
+    }
+#endif
 
     struct ggml_compute_params params = {
         /*.ith       =*/ state->ith,

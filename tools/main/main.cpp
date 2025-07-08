@@ -30,6 +30,7 @@
 #if defined(_MSC_VER)
 #pragma warning(disable: 4244 4267) // possible loss of data
 #endif
+#include "perf-monitor.h"
 
 static llama_context           ** g_ctx;
 static llama_model             ** g_model;
@@ -73,6 +74,13 @@ static void sigint_handler(int signo) {
             LOG("\n");
             common_perf_print(*g_ctx, *g_smpl);
 
+            printf("=== 性能监控统计 ===\n");
+
+            ggml_perf_monitor_print_summary();
+            ggml_perf_monitor_print_detailed();
+
+            printf("=== 性能监控结束 ===\n");
+
             // make sure all logs are flushed
             LOG("Interrupted by user\n");
             common_log_pause(common_log_main());
@@ -91,6 +99,10 @@ int main(int argc, char ** argv) {
     }
 
     common_init();
+
+    // 初始化性能监控
+    ggml_perf_monitor_init();
+    ggml_perf_monitor_enable(true);
 
     auto & sparams = params.sampling;
 
@@ -981,6 +993,14 @@ int main(int argc, char ** argv) {
     common_sampler_free(smpl);
 
     llama_backend_free();
+    printf("llama_backend_free\n");
+    LOG("llama_backend_free\n");
+    
+    // 输出性能监控统计
+    printf("=== 性能监控统计 ===\n");
+    ggml_perf_monitor_print_summary();
+    ggml_perf_monitor_print_detailed();
+    printf("=== 性能监控结束 ===\n");
 
     ggml_threadpool_free_fn(threadpool);
     ggml_threadpool_free_fn(threadpool_batch);
