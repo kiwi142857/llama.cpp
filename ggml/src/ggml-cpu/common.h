@@ -121,7 +121,14 @@ static std::pair<int64_t, int64_t> get_thread_range(const struct ggml_compute_pa
     
     // 根据ith值绑定到对应的CPU核心
     if (ith < 8) {  // 只处理前8个核心
-        CPU_SET(ith, &cpuset);
+        if(nth>4)
+        {
+            CPU_SET(ith, &cpuset);
+        }
+        else if(nth==4)
+        {
+            CPU_SET(ith+4, &cpuset);
+        }
         int result = pthread_setaffinity_np(pthread_self(), sizeof(cpu_set_t), &cpuset);
         if (result == 0) {
             // 绑定成功，可以记录日志

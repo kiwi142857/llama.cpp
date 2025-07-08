@@ -78,6 +78,7 @@ static void sigint_handler(int signo) {
 
             ggml_perf_monitor_print_summary();
             ggml_perf_monitor_print_detailed();
+            ggml_perf_monitor_print_matmul_chunks();
 
             printf("=== 性能监控结束 ===\n");
 

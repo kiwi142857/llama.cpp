@@ -1382,7 +1382,10 @@ UseGgmlGemm2:;
         if ((nr0 % 2 != 0) || (ne11 % 2 != 0) || ((ir0_end - ir0_start) % 2 != 0) || ((ir1_end - ir1_start) % 2 != 0)) {
             num_rows_per_vec_dot = 1;
         }
+        
+        GGML_PERF_CUSTOM_FUNC_START(params->ith, GGML_PERF_FUNC_MUL_MAT_ONE_CHUNK);
         ggml_compute_forward_mul_mat_one_chunk(params, dst, src0->type, num_rows_per_vec_dot, ir0_start, ir0_end, ir1_start, ir1_end);
+        GGML_PERF_CUSTOM_FUNC_END(params->ith, GGML_PERF_FUNC_MUL_MAT_ONE_CHUNK);
 
         if (nth >= nchunk0 * nchunk1) {
             break;
@@ -1637,17 +1640,20 @@ static void ggml_compute_forward_mul_mat_id(
             const int64_t ir1_start = dr1 * ith1;
             const int64_t ir1_end = MIN(ir1_start + dr1, nr1);
 
+            GGML_PERF_CUSTOM_FUNC_START(ith, GGML_PERF_FUNC_MUL_MAT_ID_ONE_CHUNK);
             ggml_compute_forward_mul_mat_id_one_chunk(
                 dst, src0, src1, ids, cur_a,
                 ir0_start, ir0_end, ir1_start, ir1_end,
                 src0_cur, matrix_rows, row_size, src1_cont, wdata
             );
+            GGML_PERF_CUSTOM_FUNC_END(ith, GGML_PERF_FUNC_MUL_MAT_ID_ONE_CHUNK);
 
             if (nth >= nchunk0 * nchunk1) {
                 break;
             }
 
             current_chunk = atomic_fetch_add_explicit(current_chunk_ctr, 1, memory_order_relaxed);
+            if(ith<4) break;
         }
     }
 }
