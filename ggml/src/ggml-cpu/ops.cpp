@@ -3551,8 +3551,8 @@ static void ggml_compute_forward_swiglu_f16(
         GGML_ASSERT(src0->type == src1->type);
     }
 
-    // const int ith = params->ith;
-    // const int nth = params->nth;
+    const int ith = params->ith;
+    const int nth = params->nth;
 
     const int nc = src1 ? src0->ne[0] : src0->ne[0] / 2;
     const int nr = ggml_nrows(src0);
@@ -3563,13 +3563,11 @@ static void ggml_compute_forward_swiglu_f16(
     const int32_t swapped = ggml_get_op_params_i32(dst, 1);
 
     // rows per thread
-    // const int dr = (nr + nth - 1)/nth;
+    const int dr = (nr + nth - 1)/nth;
 
     // row range for this thread
-    // const int ir0 = dr*ith;
-    // const int ir1 = MIN(ir0 + dr, nr);
-
-    const auto [ir0, ir1] = get_thread_range(params, src0);
+    const int ir0 = dr*ith;
+    const int ir1 = MIN(ir0 + dr, nr);
 
     for (int i1 = ir0; i1 < ir1; i1++) {
         ggml_fp16_t * src0_p = (ggml_fp16_t *) (src0_d + i1*src0_o);
@@ -4746,37 +4744,12 @@ static void ggml_compute_forward_set_f32(
 
     GGML_ASSERT(nb10 == sizeof(float));
 
-    // 使用负载均衡的行范围分配
-    // 硬编码CPU频率权重：前4核权重3，后4核权重4
-    int weight_low = 3;
-    int weight_high = 4;
-    
-    // 计算总权重
-    int64_t total_weight = 0;
-    for (int i = 0; i < nth; ++i) {
-        if (i < 4) {
-            total_weight += weight_low;  // 前4核权重
-        } else if (i < 8) {
-            total_weight += weight_high;  // 后4核权重
-        } else {
-            total_weight += weight_high;  // 超过8核的话，默认使用大核权重
-        }
-    }
-    
-    // 计算当前线程应该处理的行数
-    int64_t allocated_rows = 0;
-    for (int i = 0; i < ith; ++i) {
-        int64_t weight = (i < 4) ? weight_low : ((i < 8) ? weight_high : weight_high);
-        int64_t rows_for_thread = (nr * weight) / total_weight;
-        allocated_rows += rows_for_thread;
-    }
-    
-    const int ir0 = allocated_rows;
-    int64_t current_weight = (ith < 4) ? weight_low : ((ith < 8) ? weight_high : weight_high);
-    int64_t rows_for_current_thread = (nr * current_weight) / total_weight;
-    
-    // 如果是最后一个线程，处理所有剩余行
-    const int ir1 = (ith == nth - 1) ? nr : (ir0 + rows_for_current_thread);
+    // rows per thread
+    const int dr = (nr + nth - 1)/nth;
+
+    // row range for this thread
+    const int ir0 = dr*ith;
+    const int ir1 = MIN(ir0 + dr, nr);
 
     for (int ir = ir0; ir < ir1; ++ir) {
         // src0 and dst are viewed with shape of src1 and offset
