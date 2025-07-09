@@ -91,6 +91,10 @@ void ggml_perf_custom_func_end(int thread_id, enum ggml_perf_custom_func func_ty
 // Chunk抢占统计接口
 void ggml_perf_record_chunk_acquisition(int thread_id);
 
+// Chunk配置记录接口
+void ggml_perf_record_chunk_config(int64_t nchunk0, int64_t nchunk1, int chunk_size, int64_t dr0, int64_t dr1);
+void ggml_perf_print_top_chunk_configs(int top_n);
+
 // 统计结果输出接口
 void ggml_perf_monitor_print_summary(void);
 void ggml_perf_monitor_print_detailed(void);
@@ -116,6 +120,10 @@ void ggml_perf_monitor_export_matmul_chunks_csv(const char* filename);  // 导�
 // Chunk抢占统计宏
 #define GGML_PERF_RECORD_CHUNK_ACQUISITION(thread_id) \
     ggml_perf_record_chunk_acquisition((thread_id))
+
+// Chunk配置记录宏
+#define GGML_PERF_RECORD_CHUNK_CONFIG(nchunk0, nchunk1, chunk_size, dr0, dr1) \
+    ggml_perf_record_chunk_config((nchunk0), (nchunk1), (chunk_size), (dr0), (dr1))
 
 // 自动计时的RAII风格宏（需要C++支持）
 #ifdef __cplusplus
@@ -164,6 +172,8 @@ public:
 #define ggml_perf_custom_func_start(thread_id, func_type)
 #define ggml_perf_custom_func_end(thread_id, func_type)
 #define ggml_perf_record_chunk_acquisition(thread_id)
+#define ggml_perf_record_chunk_config(nchunk0, nchunk1, chunk_size, dr0, dr1)
+#define ggml_perf_print_top_chunk_configs(top_n)
 #define ggml_perf_monitor_print_summary()
 #define ggml_perf_monitor_print_detailed()
 #define ggml_perf_monitor_print_matmul_chunks()
@@ -175,6 +185,7 @@ public:
 #define GGML_PERF_CUSTOM_FUNC_START(thread_id, func)
 #define GGML_PERF_CUSTOM_FUNC_END(thread_id, func)
 #define GGML_PERF_RECORD_CHUNK_ACQUISITION(thread_id)
+#define GGML_PERF_RECORD_CHUNK_CONFIG(nchunk0, nchunk1, chunk_size, dr0, dr1)
 
 #ifdef __cplusplus
 #define GGML_PERF_AUTO_TIMER(params, op)

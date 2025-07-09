@@ -49,6 +49,53 @@ void simulate_matmul_chunk_execution() {
     }
 }
 
+// 模拟chunk配置记录
+void simulate_chunk_configs() {
+    printf("模拟chunk配置记录...\n");
+    
+    // 模拟常见的chunk配置组合
+    struct {
+        int64_t nchunk0, nchunk1;
+        int chunk_size;
+        int64_t dr0, dr1;
+        int repeat_count;
+    } test_configs[] = {
+        {4, 8, 16, 64, 32, 150},     // 高频配置
+        {2, 4, 16, 128, 64, 120},    // 中频配置  
+        {8, 16, 16, 32, 16, 100},    // 中频配置
+        {1, 2, 64, 256, 128, 80},    // 低频配置
+        {16, 32, 16, 16, 8, 60},     // 低频配置
+        {4, 8, 32, 64, 32, 50},      // 低频配置
+        {2, 8, 16, 128, 32, 40},     // 低频配置
+        {8, 8, 16, 32, 32, 30},      // 低频配置
+        {1, 4, 64, 256, 64, 25},     // 低频配置
+        {16, 16, 16, 16, 16, 20},    // 低频配置
+    };
+    
+    // 记录各种配置
+    for (int i = 0; i < sizeof(test_configs) / sizeof(test_configs[0]); i++) {
+        for (int j = 0; j < test_configs[i].repeat_count; j++) {
+            ggml_perf_record_chunk_config(
+                test_configs[i].nchunk0,
+                test_configs[i].nchunk1, 
+                test_configs[i].chunk_size,
+                test_configs[i].dr0,
+                test_configs[i].dr1
+            );
+        }
+        
+        // 偶尔打印进度
+        if (i % 3 == 0) {
+            printf("已记录配置 [%ld,%ld,%d,%ld,%ld] %d次\n", 
+                   test_configs[i].nchunk0, test_configs[i].nchunk1,
+                   test_configs[i].chunk_size, test_configs[i].dr0, test_configs[i].dr1,
+                   test_configs[i].repeat_count);
+        }
+    }
+    
+    printf("chunk配置记录完成！\n");
+}
+
 int main(int argc, char** argv) {
     printf("=== MatMul Chunk 性能监控演示 ===\n\n");
     
@@ -72,6 +119,9 @@ int main(int argc, char** argv) {
     // 执行模拟的函数调用
     simulate_matmul_chunk_execution();
     
+    // 执行模拟的chunk配置记录
+    simulate_chunk_configs();
+    
     printf("模拟执行完成！\n\n");
     
     // 输出性能分析结果
@@ -82,6 +132,10 @@ int main(int argc, char** argv) {
     
     // 打印MatMul Chunk函数的专门分析
     ggml_perf_monitor_print_matmul_chunks();
+    
+    // 打印最频繁的chunk配置
+    printf("\n=== Chunk配置频率分析 ===\n");
+    ggml_perf_print_top_chunk_configs(10);  // 显示前10个最频繁的配置
     
     // 导出详细数据到文件
     printf("导出性能数据到文件...\n");
@@ -99,8 +153,10 @@ int main(int argc, char** argv) {
     printf("3. 开始计时: GGML_PERF_CUSTOM_FUNC_START(thread_id, func_type)\n");
     printf("4. 结束计时: GGML_PERF_CUSTOM_FUNC_END(thread_id, func_type)\n");
     printf("5. 记录Chunk抢占: GGML_PERF_RECORD_CHUNK_ACQUISITION(thread_id)\n");
-    printf("6. 打印结果: ggml_perf_monitor_print_matmul_chunks()\n");
-    printf("7. 导出数据: ggml_perf_monitor_export_matmul_chunks_csv()\n");
+    printf("6. 记录Chunk配置: GGML_PERF_RECORD_CHUNK_CONFIG(nchunk0, nchunk1, chunk_size, dr0, dr1)\n");
+    printf("7. 打印结果: ggml_perf_monitor_print_matmul_chunks()\n");
+    printf("8. 打印Chunk配置频率: ggml_perf_print_top_chunk_configs(top_n)\n");
+    printf("9. 导出数据: ggml_perf_monitor_export_matmul_chunks_csv()\n");
     
     // 清理资源
     ggml_perf_monitor_free();
@@ -140,6 +196,11 @@ int main(int argc, char** argv) {
  * // Chunk抢占统计 (在获取新chunk时调用):
  * current_chunk = atomic_fetch_add_explicit(&params->threadpool->current_chunk, 1, memory_order_relaxed);
  * GGML_PERF_RECORD_CHUNK_ACQUISITION(ith);
+ * 
+ * // Chunk配置记录 (在计算chunk参数后调用):
+ * const int64_t dr0 = (nr0 + nchunk0 - 1) / nchunk0;
+ * const int64_t dr1 = (nr1 + nchunk1 - 1) / nchunk1;
+ * GGML_PERF_RECORD_CHUNK_CONFIG(nchunk0, nchunk1, chunk_size, dr0, dr1);
  * ```
  * 
  * 性能指标解释:
@@ -149,4 +210,9 @@ int main(int argc, char** argv) {
  * - 最小/最大时间: 帮助识别性能变化和瓶颈
  * - 调用次数: 显示函数被调用的频率
  * - 线程分布: 显示每个线程的工作负载
+ * - Chunk配置频率: 显示不同chunk参数组合的出现频率
+ *   - nchunk0/nchunk1: chunk分块数量
+ *   - chunk_size: chunk大小
+ *   - dr0/dr1: 每个chunk的实际元素数量
+ *   - 频率/占比: 该配置组合出现的次数和百分比
  */ 

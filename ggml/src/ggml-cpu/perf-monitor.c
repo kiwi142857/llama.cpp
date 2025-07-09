@@ -37,12 +37,88 @@ static const char* ggml_perf_custom_func_name(enum ggml_perf_custom_func func) {
     }
 }
 
+// 比较函数，用于按频率降序排序
+static int compare_chunk_configs(const void* a, const void* b) {
+    const struct ggml_perf_chunk_config* config_a = (const struct ggml_perf_chunk_config*)a;
+    const struct ggml_perf_chunk_config* config_b = (const struct ggml_perf_chunk_config*)b;
+    
+    // 按频率降序排序
+    if (config_a->frequency > config_b->frequency) return -1;
+    if (config_a->frequency < config_b->frequency) return 1;
+    return 0;
+}
+
+// 打印前N个chunk配置
+void ggml_perf_print_top_chunk_configs(int top_n) {
+    if (!g_perf_monitor.enabled) {
+        printf("性能监控未启用\n");
+        return;
+    }
+    
+    if (g_perf_monitor.chunk_config_count == 0) {
+        printf("没有记录到chunk配置信息\n");
+        return;
+    }
+    
+    // 创建临时数组用于排序
+    struct ggml_perf_chunk_config* sorted_configs = 
+        malloc(g_perf_monitor.chunk_config_count * sizeof(struct ggml_perf_chunk_config));
+    
+    if (!sorted_configs) {
+        printf("内存分配失败，无法排序chunk配置\n");
+        return;
+    }
+    
+    // 复制数据
+    memcpy(sorted_configs, g_perf_monitor.chunk_configs, 
+           g_perf_monitor.chunk_config_count * sizeof(struct ggml_perf_chunk_config));
+    
+    // 排序
+    qsort(sorted_configs, g_perf_monitor.chunk_config_count, 
+          sizeof(struct ggml_perf_chunk_config), compare_chunk_configs);
+    
+    // 确定要打印的数量
+    int print_count = (top_n > g_perf_monitor.chunk_config_count) ? 
+                      g_perf_monitor.chunk_config_count : top_n;
+    
+    printf("\n=== 前 %d 个最频繁的Chunk配置 ===\n", print_count);
+    printf("排名 | nchunk0 | nchunk1 | chunk_size | dr0 | dr1 | 频率 | 占比(%%)\n");
+    printf("-----|---------|---------|------------|-----|-----|------|--------\n");
+    
+    // 计算总频率用于百分比计算
+    int64_t total_frequency = 0;
+    for (int i = 0; i < g_perf_monitor.chunk_config_count; i++) {
+        total_frequency += sorted_configs[i].frequency;
+    }
+    
+    // 打印前N个配置
+    for (int i = 0; i < print_count; i++) {
+        struct ggml_perf_chunk_config* config = &sorted_configs[i];
+        double percentage = (double)config->frequency / total_frequency * 100.0;
+        
+        printf("%4d | %7ld | %7ld | %10d | %3ld | %3ld | %4ld | %6.1f\n",
+               i + 1,
+               config->nchunk0,
+               config->nchunk1, 
+               config->chunk_size,
+               config->dr0,
+               config->dr1,
+               config->frequency,
+               percentage);
+    }
+    
+    printf("\n总配置数量: %d, 总频率: %ld\n", g_perf_monitor.chunk_config_count, total_frequency);
+    
+    free(sorted_configs);
+}
+
 // 初始化性能监控器
 void ggml_perf_monitor_init(void) {
     memset(&g_perf_monitor, 0, sizeof(g_perf_monitor));
     g_perf_monitor.enabled = false;
     g_perf_monitor.max_threads = GGML_MAX_N_THREADS;
     g_perf_monitor.monitor_start_time_us = ggml_time_us();
+    g_perf_monitor.chunk_config_count = 0;
     
     printf("DEBUG: 性能监控器已初始化，最大线程数: %d\n", GGML_MAX_N_THREADS);
     
@@ -111,6 +187,7 @@ void ggml_perf_monitor_reset(void) {
         }
     }
     g_perf_monitor.monitor_start_time_us = ggml_time_us();
+    g_perf_monitor.chunk_config_count = 0;
 }
 
 // 开始记录操作时间
@@ -286,6 +363,66 @@ void ggml_perf_custom_func_end(int thread_id, enum ggml_perf_custom_func func_ty
         printf("DEBUG: 结束监控自定义函数 %s (线程 %d, 耗时 %.2f ms)\n", 
                ggml_perf_custom_func_name(func_type), thread_id, duration / 1000.0);
         end_call_count++;
+    }
+}
+
+// 记录chunk配置
+void ggml_perf_record_chunk_config(int64_t nchunk0, int64_t nchunk1, int chunk_size, int64_t dr0, int64_t dr1) {
+    if (!g_perf_monitor.enabled) {
+        return;
+    }
+    
+    // 查找是否已存在相同的配置
+    for (int i = 0; i < g_perf_monitor.chunk_config_count; i++) {
+        struct ggml_perf_chunk_config* config = &g_perf_monitor.chunk_configs[i];
+        if (config->nchunk0 == nchunk0 && 
+            config->nchunk1 == nchunk1 && 
+            config->chunk_size == chunk_size && 
+            config->dr0 == dr0 && 
+            config->dr1 == dr1) {
+            config->frequency++;
+            return;
+        }
+    }
+    
+    // 如果没找到且还有空间，添加新配置
+    if (g_perf_monitor.chunk_config_count < GGML_MAX_CHUNK_CONFIGS) {
+        struct ggml_perf_chunk_config* config = &g_perf_monitor.chunk_configs[g_perf_monitor.chunk_config_count];
+        config->nchunk0 = nchunk0;
+        config->nchunk1 = nchunk1;
+        config->chunk_size = chunk_size;
+        config->dr0 = dr0;
+        config->dr1 = dr1;
+        config->frequency = 1;
+        g_perf_monitor.chunk_config_count++;
+        
+        // 调试信息
+        static int config_debug_count = 0;
+        if (config_debug_count < 5) {
+            printf("DEBUG: 记录新的chunk配置 [%ld,%ld,%d,%ld,%ld] (总计: %d)\n", 
+                   nchunk0, nchunk1, chunk_size, dr0, dr1, g_perf_monitor.chunk_config_count);
+            config_debug_count++;
+        }
+    } else {
+        // 空间不足时，找到频率最低的配置进行替换
+        int min_freq_idx = 0;
+        int64_t min_freq = g_perf_monitor.chunk_configs[0].frequency;
+        
+        for (int i = 1; i < GGML_MAX_CHUNK_CONFIGS; i++) {
+            if (g_perf_monitor.chunk_configs[i].frequency < min_freq) {
+                min_freq = g_perf_monitor.chunk_configs[i].frequency;
+                min_freq_idx = i;
+            }
+        }
+        
+        // 如果新配置比最低频率的更重要(频率=1)，则替换
+        struct ggml_perf_chunk_config* config = &g_perf_monitor.chunk_configs[min_freq_idx];
+        config->nchunk0 = nchunk0;
+        config->nchunk1 = nchunk1;
+        config->chunk_size = chunk_size;
+        config->dr0 = dr0;
+        config->dr1 = dr1;
+        config->frequency = 1;
     }
 }
 

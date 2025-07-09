@@ -1607,11 +1607,10 @@ static void ggml_compute_forward_mul_mat_id(
             chunk_size = 64;
         }
 
-        GGML_LOG_INFO("nr0: %d, nr1: %d, chunk_size: %d", nr0, nr1, chunk_size);
-
 #if defined(__aarch64__)
         // disable for ARM
-        const bool disable_chunking = true;
+        // const bool disable_chunking = true;
+        const bool disable_chunking = false;
 #else
         // disable for NUMA
         const bool disable_chunking = ggml_is_numa();
@@ -1627,6 +1626,9 @@ static void ggml_compute_forward_mul_mat_id(
 
         const int64_t dr0 = (nr0 + nchunk0 - 1) / nchunk0;
         const int64_t dr1 = (nr1 + nchunk1 - 1) / nchunk1;
+
+        // 记录chunk配置信息  
+        GGML_PERF_RECORD_CHUNK_CONFIG(nchunk0, nchunk1, chunk_size, dr0, dr1);
 
         int current_chunk = ith;
 
